@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maze Solver Race: BFS vs DFS vs Greedy vs A*</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--card:#f3f4f6;--wall:#222;--open:#fff;--seen:#9ec5ff;--path:#e53935;--s:#2e9e4f;--g:#f08c00;--btn:#2b5fd9}
+@media (prefers-color-scheme:dark){:root{--bg:#15171a;--fg:#eee;--card:#22252a;--wall:#000;--open:#2b2f36;--seen:#2f5fa8;--path:#ff6b63}}
+body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font-family:system-ui,Arial,sans-serif}
+h1{font-size:1.3rem;margin:0 0 4px}p.sub{margin:0 0 12px;opacity:.8;font-size:.9rem}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+button,select{padding:7px 14px;border-radius:6px;border:1px solid #8886;background:var(--card);color:var(--fg);font-size:.9rem}
+button.p{background:var(--btn);color:#fff;border:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.panel{background:var(--card);border-radius:10px;padding:10px;text-align:center}
+.panel h3{margin:0 0 6px;font-size:1rem}canvas{width:100%;max-width:340px;height:auto;image-rendering:pixelated;border-radius:4px}
+.st{font-size:.85rem;min-height:2.4em}.st b{color:var(--path)}
+</style>
+</head>
+<body>
+<h1>Maze Solver Race</h1>
+<p class="sub">Same maze, four search algorithms. Light blue = explored cells, red = final path. Fewer explored cells means less search effort.</p>
+<div class="bar">
+<select id="size"><option value="21">Small (21)</option><option value="41" selected>Medium (41)</option><option value="61">Large (61)</option></select>
+<label>Speed <input type="range" id="speed" min="1" max="40" value="8"></label>
+<button class="p" id="run">Run race</button>
+<button id="new">New maze</button>
+</div>
+<div class="grid" id="grid"></div>
+<script>
+const ALG=[["bfs","BFS"],["dfs","DFS"],["greedy","Greedy best-first"],["astar","A*"]];
+let n,maze,S,T,runners=[],timer=null;
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const grid=document.getElementById("grid");
+ALG.forEach(([k,name])=>{grid.insertAdjacentHTML("beforeend",`<div class="panel"><h3>${name}</h3><canvas id="c_${k}"></canvas><div class="st" id="s_${k}">Ready</div></div>`)});
+
+function makeMaze(size){
+  const g=Array.from({length:size},()=>Array(size).fill(1));
+  g[1][1]=0;const st=[[1,1]];
+  while(st.length){
+    const [r,c]=st[st.length-1];
+    const o=[[2,0],[-2,0],[0,2],[0,-2]].filter(([a,b])=>r+a>0&&r+a<size-1&&c+b>0&&c+b<size-1&&g[r+a][c+b]);
+    if(!o.length){st.pop();continue}
+    const [a,b]=o[Math.floor(Math.random()*o.length)];
+    g[r+a/2][c+b/2]=0;g[r+a][c+b]=0;st.push([r+a,c+b]);
+  }
+  for(let r=1;r<size-1;r++)for(let c=1;c<size-1;c++)if(g[r][c]&&Math.random()<0.08)g[r][c]=0;
+  return g;
+}
+const h=(p,t)=>Math.abs(p[0]-t[0])+Math.abs(p[1]-t[1]);
+function nbrs(p){return [[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>[p[0]+a,p[1]+b]).filter(([r,c])=>r>=0&&c>=0&&r<n&&c<n&&!maze[r][c])}
+const id=p=>p[0]*n+p[1];
+
+class Heap{constructor(){this.a=[]}push(x){const a=this.a;a.push(x);let i=a.length-1;while(i&&a[(i-1)>>1][0]>a[i][0]){[a[i],a[(i-1)>>1]]=[a[(i-1)>>1],a[i]];i=(i-1)>>1}}
+pop(){const a=this.a,top=a[0],last=a.pop();if(a.length){a[0]=last;let i=0;for(;;){let l=2*i+1,r=l+1,m=i;if(l<a.length&&a[l][0]<a[m][0])m=l;if(r<a.length&&a[r][0]<a[m][0])m=r;if(m==i)break;[a[i],a[m]]=[a[m],a[i]];i=m}}return top}get size(){return this.a.length}}
+
+function* solve(kind){
+  const par=new Map([[id(S),null]]),gc=new Map([[id(S),0]]),closed=new Set();
+  const open=kind==="bfs"?[S]:kind==="dfs"?[S]:null,pq=open?null:new Heap();
+  if(pq)pq.push([0,S]);
+  const seen=new Set([id(S)]);
+  while(open?open.length:pq.size){
+    let p,g0=0;
+    if(kind==="bfs")p=open.shift();
+    else if(kind==="dfs")p=open.pop();
+    else{const [,q]=pq.pop();p=q;if(closed.has(id(p)))continue;closed.add(id(p));g0=gc.get(id(p))}
+    yield p;
+    if(p[0]===T[0]&&p[1]===T[1]){const path=[];let k=id(p);while(k!==null){path.push([Math.floor(k/n),k%n]);k=par.get(k)}return path}
+    for(const q of nbrs(p)){
+      const k=id(q);
+      if(kind==="bfs"||kind==="dfs"){if(!seen.has(k)){seen.add(k);par.set(k,id(p));open.push(q)}}
+      else if(kind==="greedy"){if(!par.has(k)){par.set(k,id(p));pq.push([h(q,T),q])}}
+      else{const ng=g0+1;if(!gc.has(k)||ng<gc.get(k)){gc.set(k,ng);par.set(k,id(p));pq.push([ng+h(q,T),q])}}
+    }
+  }
+  return null;
+}
+
+function cell(ctx,p,col){ctx.fillStyle=col;ctx.fillRect(p[1],p[0],1,1)}
+function drawBase(){
+  ALG.forEach(([k])=>{
+    const cv=document.getElementById("c_"+k);cv.width=cv.height=n;
+    const ctx=cv.getContext("2d");
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)cell(ctx,[r,c],maze[r][c]?css("--wall"):css("--open"));
+    cell(ctx,S,css("--s"));cell(ctx,T,css("--g"));
+    document.getElementById("s_"+k).textContent="Ready";
+  });
+}
+function newMaze(){
+  clearInterval(timer);n=+document.getElementById("size").value;
+  maze=makeMaze(n);S=[1,1];T=[n-2,n-2];runners=[];drawBase();
+}
+function run(){
+  clearInterval(timer);drawBase();
+  runners=ALG.map(([k,name])=>({k,name,it:solve(k),count:0,done:false,ctx:document.getElementById("c_"+k).getContext("2d")}));
+  timer=setInterval(()=>{
+    const steps=+document.getElementById("speed").value;
+    let alive=false;
+    for(const r of runners){
+      if(r.done)continue;
+      for(let i=0;i<steps&&!r.done;i++){
+        const x=r.it.next();
+        if(x.done){
+          r.done=true;
+          if(x.value){x.value.forEach(p=>cell(r.ctx,p,css("--path")));cell(r.ctx,S,css("--s"));cell(r.ctx,T,css("--g"));
+            document.getElementById("s_"+r.k).innerHTML=`Explored <b>${r.count}</b> cells<br>Path length <b>${x.value.length-1}</b>`}
+        }else{r.count++;const p=x.value;if(!(p[0]===S[0]&&p[1]===S[1])&&!(p[0]===T[0]&&p[1]===T[1]))cell(r.ctx,p,css("--seen"));
+          document.getElementById("s_"+r.k).textContent=`Exploring... ${r.count}`}
+      }
+      if(!r.done)alive=true;
+    }
+    if(!alive)clearInterval(timer);
+  },30);
+}
+document.getElementById("new").onclick=newMaze;
+document.getElementById("run").onclick=run;
+document.getElementById("size").onchange=newMaze;
+newMaze();
+</script>
+</body>
+</html>
