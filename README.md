@@ -1,6 +1,6 @@
 # Maze and Route Solver using AI Search Techniques
 
-**Team:** [Team name] – [ADITYA], [Vasu Gangal], [Ronit Aggarwal], [Himanshu Shah], [Akshat Goel]
+**Team:** [Optimal Five] – [ADITYA], [Vasu Gangal], [Ronit Aggarwal], [Himanshu Shah], [Akshat Goel]
 **Course:** ITITC503 – Artificial Intelligence
 
 Compares BFS, DFS, hill climbing, greedy best-first, Dijkstra and A* (plus weighted A* and
